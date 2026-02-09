@@ -7,102 +7,117 @@ import glob
 import os
 import time
 
-# from heatmap_MI import img_heatmap_mi
 from heatmap_MI import img_heatmap_mi
 from heatmap_CD import img_heatmap_cd
 
-ratio_mi = 0.5 # ratio_cd = 1-ratio_mi
-kernel_pram = 80
-thresh_pram = 80 # percentile, from small to big
-input_path = "/home/dell/jlh/my_patch_defense/code/000/0125/"
-# input_path = "/home/dell/jlh/patch_attack/physical_video/20231106/hunhe/"
-# savefig_path = "/home/dell/jlh/my_patch_defense/code/0fuse_"+str(ratio_mi)+'_'+str(thresh_pram)+"/APRICOT/"
-savefig_path = "/home/dell/jlh/my_patch_defense/code/000/0125-out/"
 
-def fuse_heatmap(impath, ori_height, ori_width):
-    time_start = time.time()
-    h_mi = img_heatmap_mi(impath)
-    print('h_mi.shape', h_mi.shape)
-    time_mi_end = time.time()
+ratio_mi = 0.5 # ratio_cd = 1-ratio_mi
+kernel_param = 80
+thresh_param = 80 # percentile, from small to big
+input_path = ''
+savefig_path = ''
+
+def fuse_heatmap(img_path, orig_H, orig_W):
+    '''
+    Объединение тепловых карт MI и CD
+    
+    :param img_path: путь к картинке
+    :param orig_H: исходная высота изображения
+    :param orig_W: исходная ширина изображения
+    '''
+
+    # time_start = time.time()
+    heatmap_MI = img_heatmap_mi(img_path)
+    print('heatmap MI shape', heatmap_MI.shape)
+    # time_mi_end = time.time()
     # print('--------------mi cost %f s' %(time_mi_end-time_start))
 
-    h_cd, qt = img_heatmap_cd(impath)
-    h_cd = np.mean(h_cd, axis=0)
-    print('h_cd.shape', h_cd.shape)
-    time_cd_end = time.time()
+    heatmap_CD, _ = img_heatmap_cd(img_path)
+    heatmap_CD = np.mean(heatmap_CD, axis=0)
+    print('heatmap CD shape', heatmap_CD.shape)
+    # time_cd_end = time.time()
     # print('--------------cd cost %f s' %(time_cd_end-time_mi_end))
 
-    h_mi = cv2.resize(h_mi, (ori_width, ori_height))
-    print('h_mi resize to ori size')
-    # plt.imshow(h_mi)
-    # plt.title('h_mi_resize')
+    heatmap_MI = cv2.resize(heatmap_MI, (orig_W, orig_H))
+    print('heatmap MI resize to original size')
+    # plt.imshow(heatmap_MI)
+    # plt.title('heatmap_MI_resize')
     # plt.show()
-    h_cd = cv2.resize(h_cd, (ori_width, ori_height))
-    print('h_cd resize to ori size')
-    # plt.imshow(h_cd)
-    # plt.title('h_cd_resize')
+    heatmap_CD = cv2.resize(heatmap_CD, (orig_W, orig_H))
+    print('heatmap CD resize to original size')
+    # plt.imshow(heatmap_CD)
+    # plt.title('heatmap_CD_resize')
     # plt.show()
 
-    h_mi_max = np.max(h_mi)
-    h_mi_min = np.min(h_mi)
-    print('h_mi_max:', h_mi_max)
-    print('h_mi_min:', h_mi_min)
-    h_mi = [int((h_mi[i][j]-h_mi_min)*255/(h_mi_max-h_mi_min)) for i in range(len(h_mi)) for j in range(len(h_mi[0]))]
+    # этот кусок можно было бы перенести в отдельную функцию
+    heatmap_MI_max = np.max(heatmap_MI)
+    heatmap_MI_min = np.min(heatmap_MI)
+    print('heatmap_MI_max:', heatmap_MI_max)
+    print('heatmap_MI_min:', heatmap_MI_min)
+    heatmap_MI = [int((heatmap_MI[i][j] - heatmap_MI_min) * 255 /(heatmap_MI_max - heatmap_MI_min)) for i in range(len(heatmap_MI)) for j in range(len(heatmap_MI[0]))] # неэффективно
 
-    h_cd_max = np.max(h_cd)
-    h_cd_min = np.min(h_cd)
-    print('h_cd_max:', h_cd_max)
-    print('h_cd_min:', h_cd_min)
-    h_cd = [int((h_cd[i][j]-h_cd_min)*255/(h_cd_max-h_cd_min)) for i in range(len(h_cd)) for j in range(len(h_cd[0]))]
+    # этот тоже
+    heatmap_CD_max = np.max(heatmap_CD)
+    heatmap_CD_min = np.min(heatmap_CD)
+    print('heatmap_CD_max:', heatmap_CD_max)
+    print('heatmap_CD_min:', heatmap_CD_min)
+    heatmap_CD = [int((heatmap_CD[i][j] - heatmap_CD_min) * 255 /(heatmap_CD_max - heatmap_CD_min)) for i in range(len(heatmap_CD)) for j in range(len(heatmap_CD[0]))] # неэффективно
 
-    h_fuse = [int(h_mi[i]*ratio_mi + h_cd[i]*(1-ratio_mi)) for i in range(len(h_mi))]
-    print('len(h_fuse)', len(h_fuse))
+    heatmap_fusion = [int(heatmap_MI[i] * ratio_mi + heatmap_CD[i] *(1 - ratio_mi)) for i in range(len(heatmap_MI))]
+    print('length of the fusion heatmap:', len(heatmap_fusion))
 
-    time_fuse_end = time.time()
+    # time_fuse_end = time.time()
     # print('--------------fuse cost %f s' %(time_fuse_end-time_cd_end))
 
+    heatmap_fusion_flatnparray = np.array(heatmap_fusion, dtype=np.uint8)
+    heatmap_fusion_grayscale = heatmap_fusion_flatnparray.reshape(orig_H, orig_W)
 
-    h_fuse_flatNumpyArray = np.array(h_fuse,dtype=np.uint8)
-    h_fuse_grayImage = h_fuse_flatNumpyArray.reshape(ori_height, ori_width)
+    heatmap_MI_flatnparray = np.array(heatmap_MI, dtype=np.uint8)
+    heatmap_MI_grayscale = heatmap_MI_flatnparray.reshape(orig_H, orig_W)
 
-    h_mi_flatNumpyArray = np.array(h_mi,dtype=np.uint8)
-    h_mi_grayImage = h_mi_flatNumpyArray.reshape(ori_height, ori_width)
+    heatmap_CD_flatnparray = np.array(heatmap_CD, dtype=np.uint8)
+    heatmap_CD_grayscale = heatmap_CD_flatnparray.reshape(orig_H, orig_W)
 
-    h_cd_flatNumpyArray = np.array(h_cd,dtype=np.uint8)
-    h_cd_grayImage = h_cd_flatNumpyArray.reshape(ori_height, ori_width)
-
-    return h_mi_grayImage, h_cd_grayImage, h_fuse_grayImage
+    return heatmap_MI_grayscale, heatmap_CD_grayscale, heatmap_fusion_grayscale
 
 def heatmap_filter(heatmap, threshold, height, width):
-    # thresh
-    thresh,h_t = cv2.threshold(heatmap, threshold, maxval=255, type=cv2.THRESH_TOZERO)
+    '''
+    Адаптивный парог и морфологические операции
+    
+    :param heatmap: объединенная fusion heatmap
+    :param threshold: порог
+    :param height: высота изображения
+    :param width: ширина изображения
+    '''
+    # НЕ АДАПТИВНЫЙ ПОРОГ
+    thresh, map_thresh = cv2.threshold(heatmap, threshold, maxval=255, type=cv2.THRESH_TOZERO)
     # cv2.imshow('thresh',img)
     # cv2.waitKey(0) #0为任意键位终止
     # cv2.destroyAllWindows()
     # cv2.imwrite(savefig_path+name+"_t.png", img)
 
-    # compute base kernel size
-    base_kernel_size = int(min(height, width)/kernel_pram)
+    # расчет базового размера ядра для морф операций
+    base_kernel_size = int(min(height, width) / kernel_param)
     print(base_kernel_size)
 
-    # MORPH_OPEN
-    kernel=np.ones((base_kernel_size*2,base_kernel_size*2),np.uint8)
+    # OPEN операция
+    kernel = np.ones((base_kernel_size * 2,base_kernel_size * 2), np.uint8)
     # kernel=np.ones((base_kernel_size,base_kernel_size),np.uint8)
-    h_t_o=cv2.morphologyEx(h_t, cv2.MORPH_OPEN,kernel, iterations=1)
+    map_thresh_OP = cv2.morphologyEx(map_thresh, cv2.MORPH_OPEN, kernel, iterations=1)
     # cv2.imwrite(savefig_path+name+"_t_open.png", crosion)
 
-    # MORPH_CLOSE
-    kernel=np.ones((base_kernel_size,base_kernel_size),np.uint8)
+    # CLOSE операция
+    kernel = np.ones((base_kernel_size, base_kernel_size), np.uint8)
     # kernel=np.ones((base_kernel_size*2,base_kernel_size*2),np.uint8)
-    h_t_o_c=cv2.morphologyEx(h_t_o,cv2.MORPH_CLOSE,kernel, iterations=2)
+    map_thresh_OP_CL = cv2.morphologyEx(map_thresh_OP, cv2.MORPH_CLOSE, kernel, iterations=2)
     # cv2.imwrite(savefig_path+name+"_t_open_close.png", crosion2)
 
-    # MORPH_OPEN
-    kernel=np.ones((base_kernel_size*3,base_kernel_size*3),np.uint8)
-    h_t_o_c_o=cv2.morphologyEx(h_t_o_c,cv2.MORPH_OPEN,kernel, iterations=2)
+    # снова OPEN операция
+    kernel = np.ones((base_kernel_size * 3,base_kernel_size * 3), np.uint8)
+    map_thresh_OP_CL_OP = cv2.morphologyEx(map_thresh_OP_CL, cv2.MORPH_OPEN, kernel, iterations=2)
     # cv2.imwrite(savefig_path+name+"_t_open_close_open.png", crosion3)
 
-    return h_t, h_t_o, h_t_o_c, h_t_o_c_o
+    return map_thresh, map_thresh_OP, map_thresh_OP_CL, map_thresh_OP_CL_OP
 
 
 if __name__ == "__main__":
@@ -113,13 +128,13 @@ if __name__ == "__main__":
     for data_file in data_files:
         print(data_file)
         name = data_file.split(".")[0]
-        impath = data_dir + data_file
+        img_path = data_dir + data_file
         
-        ori_img = Image.open(impath).convert('RGB')
-        ori_width, ori_height = ori_img.size
-        print("ori_height , ori_width", ori_height, ori_width)
+        ori_img = Image.open(img_path).convert('RGB')
+        orig_W, orig_H = ori_img.size
+        print("orig_H , orig_W", orig_H, orig_W)
 
-        mi_img, cd_img, fuse_img = fuse_heatmap(impath, ori_height, ori_width)
+        mi_img, cd_img, fuse_img = fuse_heatmap(img_path, orig_H, orig_W)
         # cv2.imshow("fuse_img", fuse_img)
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()
@@ -127,8 +142,8 @@ if __name__ == "__main__":
         if not os.path.exists(savefig_path):
             os.makedirs(savefig_path)
 
-        threshold = np.percentile(fuse_img, thresh_pram)
-        h_t, h_t_o, h_t_o_c, h_t_o_c_o = heatmap_filter(fuse_img, threshold, ori_height, ori_width)
+        threshold = np.percentile(fuse_img, thresh_param)
+        map_thresh, map_thresh_OP, map_thresh_OP_CL, map_thresh_OP_CL_OP = heatmap_filter(fuse_img, threshold, orig_H, orig_W)
 
         # plt.figure()
         # plt.subplot(241)
@@ -144,17 +159,17 @@ if __name__ == "__main__":
         # plt.imshow(fuse_img, cmap=plt.cm.jet)
         # plt.title('fuse_heatmap')
         # plt.subplot(245)
-        # plt.imshow(h_t)
-        # plt.title('h_t')
+        # plt.imshow(map_thresh)
+        # plt.title('map_thresh')
         # plt.subplot(246)
-        # plt.imshow(h_t_o)
-        # plt.title('h_t_o')
+        # plt.imshow(map_thresh_OP)
+        # plt.title('map_thresh_OP')
         # plt.subplot(247)
-        # plt.imshow(h_t_o_c)
-        # plt.title('h_t_o_c')
+        # plt.imshow(map_thresh_OP_CL)
+        # plt.title('map_thresh_OP_CL')
         # plt.subplot(248)
-        # plt.imshow(h_t_o_c_o)
-        # plt.title('h_t_o_c_o')
+        # plt.imshow(map_thresh_OP_CL_OP)
+        # plt.title('map_thresh_OP_CL_OP')
         # # plt.show()
         # plt.savefig(savefig_path+name+".png")
 
@@ -171,16 +186,16 @@ if __name__ == "__main__":
         plt.imshow(fuse_img, cmap=plt.cm.jet)
         plt.title('fuse_heatmap')
         plt.savefig(savefig_path+name+"fuse_heatmap.png")
-        plt.imshow(h_t, cmap=plt.cm.jet)
-        plt.title('h_t')
-        plt.savefig(savefig_path+name+"h_t.png")
-        plt.imshow(h_t_o, cmap=plt.cm.jet)
-        plt.title('h_t_o')
-        plt.savefig(savefig_path+name+"h_t_o.png")
-        plt.imshow(h_t_o_c, cmap=plt.cm.jet)
-        plt.title('h_t_o_c')
-        plt.savefig(savefig_path+name+"h_t_o_c.png")
-        plt.imshow(h_t_o_c_o, cmap=plt.cm.jet)
-        plt.title('h_t_o_c_o')
-        plt.savefig(savefig_path+name+"h_t_o_c_o.png")
+        plt.imshow(map_thresh, cmap=plt.cm.jet)
+        plt.title('map_thresh')
+        plt.savefig(savefig_path+name+"map_thresh.png")
+        plt.imshow(map_thresh_OP, cmap=plt.cm.jet)
+        plt.title('map_thresh_OP')
+        plt.savefig(savefig_path+name+"map_thresh_OP.png")
+        plt.imshow(map_thresh_OP_CL, cmap=plt.cm.jet)
+        plt.title('map_thresh_OP_CL')
+        plt.savefig(savefig_path+name+"map_thresh_OP_CL.png")
+        plt.imshow(map_thresh_OP_CL_OP, cmap=plt.cm.jet)
+        plt.title('map_thresh_OP_CL_OP')
+        plt.savefig(savefig_path+name+"map_thresh_OP_CL_OP.png")
 

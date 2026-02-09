@@ -13,13 +13,12 @@ from fuse_filter import fuse_heatmap, heatmap_filter
 ratio_mi = 0.5 # ratio_cd = 1-ratio_mi
 kernel_pram = 80
 thresh_pram = 80 # percentile, from small to big
-input_path = "/home/dell/jlh/ultralytics/ultralytics/datasets/inria/images/inria_P6/"
+input_path = ''
 # input_path = "/home/dell/jlh/patch_attack/APRICOT/"
-savefig_path = "P6_final_map0428/"
+savefig_path = ''
 
 
 if __name__ == "__main__":
-    # 读图
     data_dir = input_path
     data_files = os.listdir(data_dir)
     for data_file in data_files:

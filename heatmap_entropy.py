@@ -16,11 +16,11 @@ c_std = [1.16,1.13,1.07]
 entropy_values = {'patch_mean':p_mean,'patch_stdev':p_std,
                         'clean_mean':c_mean,'clean_stdev':c_std}
 
-# 熵
+# энтропия (переведено с китайского)
 def entropy(signal):
     lensig=signal.size
     symset=list(set(signal))
-    propab=[np.size(signal[signal==i])/(1.0*lensig) for i in symset]#每个值的概率
+    propab=[np.size(signal[signal==i])/(1.0*lensig) for i in symset] # вероятность каждого значения (переведено с китайского)
     ent=np.sum([p*np.log2(1.0/p) for p in propab])
     return ent
 
