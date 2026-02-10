@@ -25,7 +25,7 @@ def recompress_diff(orig_img, checkDisplacements):
 
     mins = []
     output = []
-    smoothing_b = 17 # размер ядра для сглаживания?
+    smoothing_b = 10 # размер ядра для сглаживания?
     offset = (smoothing_b - 1) // 2
     height, width, _ = orig_img.shape
     disp_imgs = []
@@ -49,9 +49,13 @@ def recompress_diff(orig_img, checkDisplacements):
                 comparison = np.square(orig_img_disp - temp_img_disp)
 
                 h = np.ones((smoothing_b, smoothing_b)) / smoothing_b**2
-                comparison = cv2.filter2D(comparison, -1, h) # сглаживающий фильтр
+                # comparison = cv2.filter2D(comparison, -1, h) # сглаживающий фильтр
 
+                # comparison = comparison[offset : -offset, offset : -offset, :]
+
+                # поменяла местами
                 comparison = comparison[offset : -offset, offset : -offset, :]
+                comparison = cv2.filter2D(comparison, -1, h) # сглаживающий фильтр
                 
                 deltas.append(np.mean(comparison, axis=2))
                 
@@ -61,7 +65,7 @@ def recompress_diff(orig_img, checkDisplacements):
         mins.append(min_idx)
         output.append(min_overall_delta)
         delta = deltas[min_idx]
-        delta = (delta - np.min(delta)) / (np.max(delta) - np.min(delta))
+        # delta = (delta - np.min(delta)) / (np.max(delta) - np.min(delta))
 
         disp_imgs.append(cv2.resize(delta.astype(np.float32), (delta.shape[1] // 4, delta.shape[0] // 4), interpolation=cv2.INTER_LINEAR))
 

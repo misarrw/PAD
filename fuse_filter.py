@@ -33,7 +33,9 @@ def fuse_heatmap(img_path, orig_H, orig_W):
     # print('--------------mi cost %f s' %(time_mi_end-time_start))
 
     heatmap_CD, _ = img_heatmap_cd(img_path)
-    heatmap_CD = np.mean(heatmap_CD, axis=0)
+    # heatmap_CD = np.mean(heatmap_CD, axis=0)
+    middle_idx = len(heatmap_CD) // 2
+    heatmap_CD = heatmap_CD[middle_idx]
     print('heatmap CD shape', heatmap_CD.shape)
     # time_cd_end = time.time()
     # print('--------------cd cost %f s' %(time_cd_end-time_mi_end))
@@ -54,17 +56,32 @@ def fuse_heatmap(img_path, orig_H, orig_W):
     heatmap_MI_min = np.min(heatmap_MI)
     print('heatmap_MI_max:', heatmap_MI_max)
     print('heatmap_MI_min:', heatmap_MI_min)
-    heatmap_MI = [int((heatmap_MI[i][j] - heatmap_MI_min) * 255 /(heatmap_MI_max - heatmap_MI_min)) for i in range(len(heatmap_MI)) for j in range(len(heatmap_MI[0]))] # неэффективно
-
-    # этот тоже
     heatmap_CD_max = np.max(heatmap_CD)
     heatmap_CD_min = np.min(heatmap_CD)
     print('heatmap_CD_max:', heatmap_CD_max)
     print('heatmap_CD_min:', heatmap_CD_min)
+    '''heatmap_MI = [int((heatmap_MI[i][j] - heatmap_MI_min) * 255 /(heatmap_MI_max - heatmap_MI_min)) for i in range(len(heatmap_MI)) for j in range(len(heatmap_MI[0]))] # неэффективно
+
     heatmap_CD = [int((heatmap_CD[i][j] - heatmap_CD_min) * 255 /(heatmap_CD_max - heatmap_CD_min)) for i in range(len(heatmap_CD)) for j in range(len(heatmap_CD[0]))] # неэффективно
 
     heatmap_fusion = [int(heatmap_MI[i] * ratio_mi + heatmap_CD[i] *(1 - ratio_mi)) for i in range(len(heatmap_MI))]
-    print('length of the fusion heatmap:', len(heatmap_fusion))
+    print('length of the fusion heatmap:', len(heatmap_fusion))'''
+
+    # 1. Нормализация MI (формула 8) - БЕЗ int()
+    H_prime_mi = ((heatmap_MI - heatmap_MI_min) * 255.0 / 
+                (heatmap_MI_max - heatmap_MI_min + 1e-8))  # +1e-8 чтобы избежать деления на 0
+
+    # 2. Нормализация CD (формула 9) - БЕЗ int()  
+    H_prime_cd = ((heatmap_CD - heatmap_CD_min) * 255.0 / 
+                (heatmap_CD_max - heatmap_CD_min + 1e-8))
+
+    # 3. Fusion (формула 10) - сначала float, потом uint8
+    H_fuse_float = H_prime_mi * ratio_mi + H_prime_cd * (1 - ratio_mi)
+
+    # 4. Только теперь преобразуем в uint8 (для совместимости с остальным кодом)
+    heatmap_MI = np.clip(H_prime_mi, 0, 255).astype(np.uint8)
+    heatmap_CD = np.clip(H_prime_cd, 0, 255).astype(np.uint8)  
+    heatmap_fusion = np.clip(H_fuse_float, 0, 255).astype(np.uint8)
 
     # time_fuse_end = time.time()
     # print('--------------fuse cost %f s' %(time_fuse_end-time_cd_end))
@@ -90,7 +107,7 @@ def heatmap_filter(heatmap, threshold, height, width):
     :param width: ширина изображения
     '''
     # НЕ АДАПТИВНЫЙ ПОРОГ
-    thresh, map_thresh = cv2.threshold(heatmap, threshold, maxval=255, type=cv2.THRESH_TOZERO)
+    _, map_thresh = cv2.threshold(heatmap, threshold, maxval=255, type=cv2.THRESH_TOZERO)
     # cv2.imshow('thresh',img)
     # cv2.waitKey(0) #0为任意键位终止
     # cv2.destroyAllWindows()

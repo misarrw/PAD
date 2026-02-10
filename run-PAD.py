@@ -5,6 +5,8 @@ import cv2
 import sys
 import glob
 import os
+
+from adaptive_thresholding import adaptive_thresholding
 from segment_anything.segment_anything.build_sam import sam_model_registry
 # from segment_anything.segment_anything.predictor import SamPredictor
 from segment_anything.segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
@@ -54,7 +56,8 @@ if __name__ == "__main__":
 
             MI_img, CD_img, fuse_img = fuse_heatmap(img_path, orig_H, orig_W) # генерация MI, CD, fuse
 
-            threshold = np.percentile(fuse_img, thresh_param) # какое-то определение порога
+            # threshold = np.percentile(fuse_img, thresh_param)
+            threshold = adaptive_thresholding(fuse_img, thresh_param / 100)
             h_t, h_t_o, h_t_o_c, h_t_o_c_o = heatmap_filter(fuse_img, threshold, orig_H, orig_W)
 
             gray = np.where(h_t_o_c_o > 0,1,0)
