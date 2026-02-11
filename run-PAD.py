@@ -5,24 +5,32 @@ import cv2
 import sys
 import glob
 import os
+from dotenv import load_dotenv
 
-from adaptive_thresholding import adaptive_thresholding
 from segment_anything.segment_anything.build_sam import sam_model_registry
 # from segment_anything.segment_anything.predictor import SamPredictor
 from segment_anything.segment_anything.automatic_mask_generator import SamAutomaticMaskGenerator
 
 from PIL import Image
 
-from heatmap_MI import img_heatmap_mi
-from heatmap_CD import img_heatmap_cd
+# from heatmap_MI import img_heatmap_mi
+# from heatmap_CD import img_heatmap_cd
 from fuse_filter import fuse_heatmap, heatmap_filter
+from adaptive_thresholding import adaptive_thresholding
+
+
+load_dotenv()
+INPUT = os.getenv('INPUT_PATH')
+SAVE = os.getenv('SAVE_PATH')
+SAM = os.getenv('SAM')
+
 
 IOU_thresh = 0.5
 ratio_MI = 0.5 # ratio_cd = 1-ratio_MI
 kernel_param = 80
 thresh_param = 80 # percentile, from small to big
-input_path = ''
-save_path = ''
+input_path = INPUT
+save_path = SAVE
 
 def get_mask(image, mask_generator):
     masks = mask_generator.generate(image.astype(np.uint8))
@@ -30,7 +38,7 @@ def get_mask(image, mask_generator):
 
 if __name__ == "__main__":
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    sam = sam_model_registry["vit_l"](checkpoint='') # указать путь к модели сегментации
+    sam = sam_model_registry["vit_l"](checkpoint=SAM) # указать путь к модели сегментации
     sam.to(device=device)
     mask_generator = SamAutomaticMaskGenerator(sam)
 
@@ -57,7 +65,19 @@ if __name__ == "__main__":
             MI_img, CD_img, fuse_img = fuse_heatmap(img_path, orig_H, orig_W) # генерация MI, CD, fuse
 
             # threshold = np.percentile(fuse_img, thresh_param)
-            threshold = adaptive_thresholding(fuse_img, thresh_param / 100)
+            def get_optimal_threshold(fuse_img):
+                p80 = np.percentile(fuse_img, 80)
+                p90 = np.percentile(fuse_img, 90)
+                p95 = np.percentile(fuse_img, 95)
+                
+                if p95 - p90 > 100:
+                    return p90
+                else:
+                    p85 = np.percentile(fuse_img, 85)
+                    return (p85 + p90) / 2
+
+            threshold = get_optimal_threshold(fuse_img)
+            # threshold = adaptive_thresholding(fuse_img, thresh_param / 100)
             h_t, h_t_o, h_t_o_c, h_t_o_c_o = heatmap_filter(fuse_img, threshold, orig_H, orig_W)
 
             gray = np.where(h_t_o_c_o > 0,1,0)
@@ -72,7 +92,17 @@ if __name__ == "__main__":
             h = image.shape[0]
             w = image.shape[1]
             mask = get_mask(image, mask_generator)
-            print(len(mask))
+            # print(len(mask))
+
+            result_mask = np.zeros((h,w))
+
+            #just for Dpatch
+            #image = cv2.resize(image,(416,416))
+
+            h = image.shape[0]
+            w = image.shape[1]
+            mask = get_mask(image, mask_generator)
+            # print(len(mask))
 
             result_mask = np.zeros((h,w))
             for k in range(len(mask)):
@@ -81,26 +111,17 @@ if __name__ == "__main__":
                 n = mask_k&gray
                 u = mask_k #|gray
                 iou = np.sum(n)/(np.sum(u))
-                print("iou",iou)
+                # print("iou",iou)
 
                 n_1 = mask_k&result_mask.astype(np.uint8)
                 u_1 = mask_k
                 iou1 =  np.sum(n_1)/(np.sum(u_1))
-                print("iou1",iou1)
+                # print("iou1",iou1)
 
                 if(iou>IOU_thresh and iou1<0.1):
                     mask_k_save = np.expand_dims(mask_k,axis=2)
                     mask_k_save = np.tile(mask_k_save,3)
                     rgb_color = rgb_color*(~mask_k_save) 
                     result_mask = result_mask.astype(np.uint8) | mask_k
-                    '''mask_k_save = np.expand_dims(mask_k,axis=2)
-                    mask_k_save = np.tile(mask_k_save,3)
-                    mask_gray = np.expand_dims(mask_k*128,axis=2)
-                    mask_gray = np.tile(mask_gray,3)
-                    rgb_color = rgb_color*(~mask_k_save) + mask_gray
-                    result_mask = result_mask.astype(np.uint8) | mask_k'''
-                    '''result_mask = result_mask.astype(np.uint8) | mask_k
-                    rgb_color = cv2.inpaint(rgb_color, mask_k.astype(np.uint8), 3, cv2.INPAINT_NS)'''
 
             cv2.imwrite(save_path+img_name+".png",rgb_color)
-            #cv2.imwrite("./mask_hxx_0.05_gray/"+name+".png",cv2.inpaint(rgb_color, cv2.blur(result_mask.astype(np.uint8),(5,5)), 3, cv2.INPAINT_NS))

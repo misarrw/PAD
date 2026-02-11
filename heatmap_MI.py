@@ -11,68 +11,99 @@ from sklearn.metrics.cluster import  mutual_info_score, normalized_mutual_info_s
 
 def get_heatmap_mi(img_gray, img_shape_x, img_shape_y, window_size, window_stride):
     '''
-    Создание MI тепловой карты
+    Улучшенная версия MI heatmap с минимальными изменениями
     '''
-
+    
     heatmap_MI = np.zeros_like(img_gray, dtype=np.float32)
-
+    
     stride_x, stride_y = int(window_stride), int(window_stride)
     window_shape_x, window_shape_y = int(window_size), int(window_size)
-    # ents = []  сохранение значений для отладки????????
-
-    img_gray = cv2.copyMakeBorder(img_gray, int(window_shape_y / 2), int(window_shape_y / 2), int(window_shape_x / 2), int(window_shape_x / 2), cv2.BORDER_REFLECT)
-
-    '''проход по картинке с шагом stride_x'''
+    
+    pad_size = window_shape_x
+    img_gray = cv2.copyMakeBorder(img_gray, pad_size, pad_size, pad_size, pad_size, cv2.BORDER_REFLECT)
+    
+    mi_cache = {}
+    
     for x in range(0, img_shape_x - window_shape_x, stride_x):
-        '''проход по картинке с шагом stride_y'''
-        for y in range(0, img_shape_y - window_shape_y,stride_y):
-            W_cur = img_gray[x:x + window_shape_x, y:y + window_shape_y].flatten() # вырезается W_cur и преобразуется в вектор
-
+        for y in range(0, img_shape_y - window_shape_y, stride_y):
+            # Текущее окно
+            wx = x + pad_size
+            wy = y + pad_size
+            W_cur = img_gray[wx:wx + window_shape_x, wy:wy + window_shape_y].flatten()
+            
             MI_sum = 0
             neighbor_count = 0
-            if (x - window_shape_x) >= 0: # W_left
-                W_left = img_gray[x-window_shape_x:x,y:y+window_shape_y].flatten()
-                MI_left = mutual_info_score(W_cur, W_left)
-                # MI_left = normalized_mutual_info_score(W_cur, W_left)
-                # MI_left = adjusted_mutual_info_score(W_cur, W_left)
-                neighbor_count += 1
-                MI_sum += MI_left
+            
+            # Соседние окна
+            neighbours = [
+                (wx - window_shape_x, wy, "left"),
+                (wx + window_shape_x, wy, "right"),
+                (wx, wy - window_shape_y, "up"),
+                (wx, wy + window_shape_y, "down"),
+                # (wx - window_shape_x, wy - window_shape_y, "up-left"),
+                # (wx + window_shape_x, wy - window_shape_y, "up-right"),
+                # (wx - window_shape_x, wy + window_shape_y, "down-left"),
+                # (wx + window_shape_x, wy + window_shape_y, "down-right")
+            ]
+            
+            for nx, ny, direction in neighbours:
+                # проверка границ
+                if (0 <= nx < img_shape_x + 2*pad_size - window_shape_x and 
+                    0 <= ny < img_shape_y + 2*pad_size - window_shape_y):
+                    
+                    # Ключ для кэша
+                    cache_key = f"{x},{y},{direction}"
+                    
+                    if cache_key in mi_cache:
+                        mi_value = mi_cache[cache_key]
+                    else:
+                        W_neighbor = img_gray[nx:nx + window_shape_x, ny:ny + window_shape_y].flatten()
+                        
 
-            if (y - window_shape_y) >= 0: # W_up
-                W_up = img_gray[x:x+window_shape_x,y-window_shape_y:y].flatten()
-                MI_up = mutual_info_score(W_cur, W_up)
-                # MI_up = normalized_mutual_info_score(W_cur, W_up)
-                # MI_up = adjusted_mutual_info_score(W_cur, W_up)
-                neighbor_count += 1
-                MI_sum += MI_up
+                        if len(W_cur) > 10 and len(W_neighbor) > 10:
+                            W_cur_quant = np.digitize(W_cur, np.linspace(0, 255, 17))
+                            W_neighbor_quant = np.digitize(W_neighbor, np.linspace(0, 255, 17))
+                            
+                            mi_value = mutual_info_score(W_cur_quant, W_neighbor_quant)
+                            
+                            mi_value = mi_value / np.log(16)
+                        else:
+                            mi_value = 0
+                        
+                        mi_cache[cache_key] = mi_value
+                    
+                    neighbor_count += 1
+                    MI_sum += mi_value
+            
+            if neighbor_count > 0:
+                window_MI = MI_sum / neighbor_count
 
-            if (x + window_shape_x * 2) < img_shape_x: # W_right
-                W_right = img_gray[x + window_shape_x:x + window_shape_x * 2,y:y + window_shape_y].flatten()
-                MI_right = mutual_info_score(W_cur, W_right)
-                # MI_right = normalized_mutual_info_score(W_cur, W_right)
-                # MI_right = adjusted_mutual_info_score(W_cur, W_right)
-                neighbor_count += 1
-                MI_sum += MI_right
-
-            if (y + window_shape_y * 2) < img_shape_y: # W_down
-                W_cur_down = img_gray[x:x + window_shape_x, y + window_shape_y:y + window_shape_y * 2].flatten()
-                mi_down = mutual_info_score(W_cur, W_cur_down)
-                # mi_down = normalized_mutual_info_score(W_cur, W_cur_down)
-                # mi_down = adjusted_mutual_info_score(W_cur, W_cur_down)
-                neighbor_count += 1
-                MI_sum += mi_down
-
-            window_MI = MI_sum / neighbor_count
-
-            heatmap_MI[x:x + window_shape_x, y:y + window_shape_y] = window_MI
-            # ents.append(window_MI)
-            # print(window_MI)
-
-    x_exclude = heatmap_MI.shape[0] - img_shape_x
-    y_exclude = heatmap_MI.shape[1] - img_shape_y
-    heatmap_MI = heatmap_MI[round(x_exclude / 2):img_shape_x + round(x_exclude / 2) - 1, round(y_exclude / 2):img_shape_y + round(y_exclude / 2) - 1] # почему -1?
-    # print(heatmap_MI.shape)
-
+                end_x = min(x + window_shape_x, img_shape_x)
+                end_y = min(y + window_shape_y, img_shape_y)
+                heatmap_MI[x:end_x, y:end_y] = window_MI
+    
+    heatmap_MI = heatmap_MI[:img_shape_x, :img_shape_y]
+    
+    # сглаживание гаусса
+    kernel_size = max(3, min(img_shape_x, img_shape_y) // 100)
+    kernel_size = kernel_size + (kernel_size % 2 == 0)
+    if kernel_size >= 3:
+        heatmap_MI = cv2.GaussianBlur(heatmap_MI, (kernel_size, kernel_size), 0.5)
+    
+    mi_values = heatmap_MI.flatten()
+    if len(mi_values) > 0:
+        p5 = np.percentile(mi_values, 5)
+        p95 = np.percentile(mi_values, 95)
+        
+        if p95 > p5:
+            heatmap_MI = np.clip(heatmap_MI, p5, p95)
+            heatmap_MI = (heatmap_MI - p5) / (p95 - p5)
+        else:
+            heatmap_MI = np.zeros_like(heatmap_MI)
+    
+    gamma = 0.7
+    heatmap_MI = np.power(heatmap_MI, gamma)
+    
     return heatmap_MI
 
 

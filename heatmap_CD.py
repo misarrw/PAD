@@ -4,9 +4,6 @@ import os
 import matplotlib.pyplot as plt
 
 
-'''пока не поняла, зачем это, но это зачем-то надо'''
-savefig_path = ''
-
 def recompress_diff(orig_img, checkDisplacements):
     '''
     Функция для сжатия изображения и нахождения разницы
@@ -25,10 +22,11 @@ def recompress_diff(orig_img, checkDisplacements):
 
     mins = []
     output = []
-    smoothing_b = 10 # размер ядра для сглаживания?
-    offset = (smoothing_b - 1) // 2
     height, width, _ = orig_img.shape
+    smoothing_b = max(3, min(height, width) // 50) # размер ядра для сглаживания?
+    offset = (smoothing_b - 1) // 2
     disp_imgs = []
+    raw_deltas = []
 
     for i in range(minQ, maxQ + 1, stepQ):
         cv2.imwrite('temp_img.jpg', orig_img, [int(cv2.IMWRITE_JPEG_QUALITY), i]) # сохраняем изображение с качеством i
@@ -40,34 +38,57 @@ def recompress_diff(orig_img, checkDisplacements):
         for displacement_x in range(max_disp + 1):
             for displacement_y in range(max_disp + 1):
                 
-                disp_idx = displacement_x * 8 + displacement_y + 1
+                # disp_idx = displacement_x * (max_disp + 1) + displacement_y
                 
                 temp_img_disp = temp_img[displacement_x:, displacement_y:, :]
                 
                 orig_img_disp = orig_img[: height - displacement_x, : width - displacement_y, :].astype(float)
 
-                comparison = np.square(orig_img_disp - temp_img_disp)
+                squared_diff = np.square(orig_img_disp - temp_img_disp)
+                squared_diff = np.mean(squared_diff, axis=2)
 
                 h = np.ones((smoothing_b, smoothing_b)) / smoothing_b**2
-                # comparison = cv2.filter2D(comparison, -1, h) # сглаживающий фильтр
+                squared_diff = cv2.filter2D(squared_diff, -1, h) # сглаживающий фильтр
 
-                # comparison = comparison[offset : -offset, offset : -offset, :]
-
-                # поменяла местами
-                comparison = comparison[offset : -offset, offset : -offset, :]
-                comparison = cv2.filter2D(comparison, -1, h) # сглаживающий фильтр
+                squared_diff = squared_diff[offset : -offset, offset : -offset]
                 
-                deltas.append(np.mean(comparison, axis=2))
+                # deltas.append(np.mean(squared_diff, axis=2))
+                deltas.append(squared_diff)
+                raw_deltas.append(squared_diff)
                 
-                overall_delta.append(np.mean(deltas[disp_idx - 1]))
+                overall_delta.append(squared_diff.mean())
 
         min_overall_delta, min_idx = min(overall_delta), np.argmin(overall_delta)
         mins.append(min_idx)
         output.append(min_overall_delta)
         delta = deltas[min_idx]
+        raw_deltas.append(delta)
         # delta = (delta - np.min(delta)) / (np.max(delta) - np.min(delta))
 
-        disp_imgs.append(cv2.resize(delta.astype(np.float32), (delta.shape[1] // 4, delta.shape[0] // 4), interpolation=cv2.INTER_LINEAR))
+        resized_raw = cv2.resize(delta.astype(np.float32), 
+                                (delta.shape[1] // 4, delta.shape[0] // 4),
+                                interpolation=cv2.INTER_LINEAR)
+        disp_imgs.append(resized_raw)
+    
+    if raw_deltas:
+      normalized_imgs = []
+      for raw_delta in raw_deltas:
+        delta_nonzero = raw_delta[raw_delta > 0]
+        if len(delta_nonzero) > 0:
+            p99 = np.percentile(delta_nonzero, 99)
+            p1 = np.percentile(delta_nonzero, 1)
+            
+            if p99 > p1:
+                normalized = (raw_delta - p1) / (p99 - p1 + 1e-8)
+                normalized = np.clip(normalized, 0, 1)
+            else:
+                normalized = raw_delta
+        else:
+            normalized = raw_delta
+        
+        normalized = normalized ** 0.5
+        normalized_imgs.append(normalized)
+      disp_imgs = normalized_imgs
 
     output_Y = output
     output_X = list(range(minQ, maxQ + 1, stepQ))
@@ -125,54 +146,3 @@ def img_heatmap_cd(img_path):
     heatmap_CD = disp_imgs
 
     return heatmap_CD, output_X
-
-if __name__ == "__main__":
-    data_dir = '' # путь к директории с картинками
-    data_files = os.listdir(data_dir)
-
-    for data_file in data_files:
-        filename = data_file.split(".")[0]
-        img_path = data_dir + data_file
-
-        heatmap_CD, output_X = img_heatmap_cd(img_path)
-
-        # for i in range(len(heatmap_CD)):
-        #     print(heatmap_CD[i].shape)
-        #     print(output_X[i])
-        #     plt.imshow(heatmap_CD[i])
-        #     plt.title(output_X[i])
-        #     plt.savefig(savefig_path+name+str(output_X[i])+".png")
-
-        average_heatmap_CD = np.mean(heatmap_CD, axis=0)
-        # plt.imshow(average_heatmap_CD)
-        # plt.title('average')
-        # plt.savefig(savefig_path+name+"_average.png")
-
-        heatmap_CD_max = np.max(average_heatmap_CD)
-        heatmap_CD_min = np.min(average_heatmap_CD)
-        print('max:', heatmap_CD_max)
-        print('min:', heatmap_CD_min)
-
-        out_height = len(average_heatmap_CD)
-        out_width = len(average_heatmap_CD[0])
-        print("out_height , out_width", out_height, out_width)
-
-        average_heatmap_CD = [int((average_heatmap_CD[i][j] - heatmap_CD_min) * 255 /(heatmap_CD_max-heatmap_CD_min)) for i in range(out_height) for j in range(out_width)]
-        print(heatmap_CD)
-
-        # translate into numpy array
-        flatNumpyArray = np.array(average_heatmap_CD,dtype=np.uint8)
-        # Convert the array to make a grayscale image
-        grayImage = flatNumpyArray.reshape(out_height, out_width)
-        # show gray image
-        print(grayImage)
-
-        #resize to original size
-        img = cv2.imread(img_path)
-        ori_height, ori_width, _ = img.shape
-        print("ori_height , ori_width", ori_height, ori_width)
-        grayImage = cv2.resize(grayImage, (ori_height, ori_width))
-
-        cv2.imshow("GrayImage", grayImage)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
